@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import re
 from typing import List, Dict
 
-def search_arxiv_papers(keywords: List[str], days_back: int = 3) -> List[Dict]:
+def search_arxiv_papers(keywords: List[str], days_back: int = 3, sort_by: str = 'lastUpdatedDate', filter_by: str = 'updated') -> List[Dict]:
     """
     Search arXiv papers for specific keywords in the past N days
     
@@ -33,12 +33,13 @@ def search_arxiv_papers(keywords: List[str], days_back: int = 3) -> List[Dict]:
         'search_query': f'all:({search_terms})',
         'start': 0,
         'max_results': 100,  # Adjust as needed
-        'sortBy': 'submittedDate',
+        'sortBy': sort_by,
         'sortOrder': 'descending'
     }
     
     print(f"Searching arXiv for papers containing: {', '.join(keywords)}")
-    print(f"Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    print(f"Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')} (based on {filter_by})")
+    print(f"Sorted by: {sort_by} (descending)")
     print("-" * 60)
     
     try:
@@ -61,12 +62,16 @@ def search_arxiv_papers(keywords: List[str], days_back: int = 3) -> List[Dict]:
             title = entry.find('atom:title', ns).text.strip()
             summary = entry.find('atom:summary', ns).text.strip()
             
-            # Get submission date
+            # Get submission and updated dates
             published = entry.find('atom:published', ns).text
+            updated_elem = entry.find('atom:updated', ns)
+            updated = updated_elem.text if updated_elem is not None else published
             pub_date = datetime.strptime(published[:10], '%Y-%m-%d')
+            upd_date = datetime.strptime(updated[:10], '%Y-%m-%d')
             
-            # Filter by date range
-            if start_date.date() <= pub_date.date() <= end_date.date():
+            # Filter by selected date field
+            date_to_check = upd_date if filter_by == 'updated' else pub_date
+            if start_date.date() <= date_to_check.date() <= end_date.date():
                 # Get authors
                 authors = []
                 for author in entry.findall('atom:author', ns):
@@ -95,6 +100,7 @@ def search_arxiv_papers(keywords: List[str], days_back: int = 3) -> List[Dict]:
                         'authors': authors,
                         'arxiv_id': arxiv_id,
                         'published_date': pub_date.strftime('%Y-%m-%d'),
+                        'updated_date': upd_date.strftime('%Y-%m-%d'),
                         'abstract': summary,
                         'pdf_url': pdf_url,
                         'abstract_url': abs_url,
@@ -191,8 +197,9 @@ def display_results_markdown(papers: List[Dict]):
         
         # Format authors
         authors_str = ", ".join(paper['authors'])
+        updated_str = paper.get('updated_date', paper.get('published_date', ''))
         
-        print(f"📄 **{paper['title']}**, Organizations: {organizations}, Authors: {authors_str}, Link: {paper['abstract_url']}")
+        print(f"📄 **{paper['title']}**, Updated: {updated_str}, Organizations: {organizations}, Authors: {authors_str}, Link: {paper['abstract_url']}")
         print()  # Add blank line after each paper
 
 def display_results(papers: List[Dict]):
@@ -210,6 +217,8 @@ def display_results(papers: List[Dict]):
         print(f"   Authors: {', '.join(paper['authors'][:3])}" + 
               (f" (and {len(paper['authors']) - 3} more)" if len(paper['authors']) > 3 else ""))
         print(f"   Published: {paper['published_date']}")
+        if 'updated_date' in paper:
+            print(f"   Updated: {paper['updated_date']}")
         print(f"   arXiv ID: {paper['arxiv_id']}")
         print(f"   Keywords found: {', '.join(paper['found_keywords'])}")
         print(f"   Abstract URL: {paper['abstract_url']}")
@@ -240,8 +249,9 @@ def save_results_to_markdown(papers: List[Dict], filename: str = "arxiv_3dgs_pap
             
             # Format authors
             authors_str = ", ".join(paper['authors'])
+            updated_str = paper.get('updated_date', paper.get('published_date', ''))
             
-            f.write(f"📄 **{paper['title']}**, {authors_str}, **Link**: {paper['abstract_url']}\n\n")  # Add blank line after each paper
+            f.write(f"📄 **{paper['title']}**, Updated: {updated_str}, {authors_str}, **Link**: {paper['abstract_url']}\n\n")  # Add blank line after each paper
     
     print(f"\nMarkdown results saved to {filename}")
 
@@ -261,6 +271,8 @@ def save_results_to_file(papers: List[Dict], filename: str = "arxiv_3dgs_papers.
             f.write(f"{i}. {paper['title']}\n")
             f.write(f"   Authors: {', '.join(paper['authors'])}\n")
             f.write(f"   Published: {paper['published_date']}\n")
+            if 'updated_date' in paper:
+                f.write(f"   Updated: {paper['updated_date']}\n")
             f.write(f"   arXiv ID: {paper['arxiv_id']}\n")
             f.write(f"   Keywords found: {', '.join(paper['found_keywords'])}\n")
             f.write(f"   Abstract URL: {paper['abstract_url']}\n")
@@ -275,8 +287,8 @@ if __name__ == "__main__":
     # Define keywords to search for
     keywords = ["3DGS", "Gaussian Splatting"]
     
-    # Search for papers
-    papers = search_arxiv_papers(keywords, days_back=3)
+    # Search for papers (sorted and filtered by last updated date by default)
+    papers = search_arxiv_papers(keywords, days_back=3, sort_by='lastUpdatedDate', filter_by='updated')
     
     # Display results in markdown format
     print("\n" + "="*60)
